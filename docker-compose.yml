@@ -33,7 +33,7 @@ services:
 
   migrate:
     build:
-      context: .
+      context: ./backend
       target: migrate
     environment:
       GOOSE_DRIVER: postgres
@@ -46,10 +46,10 @@ services:
 
   backend:
     build:
-      context: .
+      context: ./backend
       target: runtime
     env_file:
-      - .env
+      - ./.env.docker
     ports:
       - "8080:8080"
     depends_on:
@@ -60,9 +60,9 @@ services:
 
   frontend:
     build:
-      context: ../frontend
+      context: ./frontend
     environment:
-      API_UPSTREAM: http://backend:8080
+      VITE_API_BASE_URL: http://backend:8080
     ports:
       - "8081:80"
     depends_on:
