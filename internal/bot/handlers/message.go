@@ -3,7 +3,9 @@ package handlers
 import (
 	"context"
 	"log/slog"
+	"strings"
 
+	"github.com/Deahesi/expenses-backend/internal/domain"
 	"github.com/Deahesi/expenses-backend/internal/llm"
 	"github.com/Deahesi/expenses-backend/internal/user"
 	telegram "github.com/go-telegram/bot"
@@ -15,8 +17,16 @@ func (h *MessageHandler) HandleMessage(
 	client *telegram.Bot,
 	update *models.Update,
 ) {
+	h.handleMessage(ctx, client, update)
+}
+
+func (h *MessageHandler) handleMessage(
+	ctx context.Context,
+	client messageClient,
+	update *models.Update,
+) {
 	var response string
-	if update.Message == nil || update.Message.From == nil {
+	if update == nil || update.Message == nil || update.Message.From == nil {
 		return
 	}
 
@@ -33,6 +43,7 @@ func (h *MessageHandler) HandleMessage(
 
 	if err != nil {
 		slog.Error("failed to send message", "error", err)
+		return
 	}
 
 	user, err := h.usersService.UpsertTelegramUser(ctx, user.UpsertTelegramUserInput{
@@ -40,33 +51,53 @@ func (h *MessageHandler) HandleMessage(
 		LastName:   update.Message.From.LastName,
 		TelegramID: update.Message.From.ID,
 	})
-
 	if err != nil {
 		slog.Error("failed to process message", "error", err)
 		response = "Не удалось обработать сообщение"
+		if _, err := sendResponse(ctx, client, msg.Chat.ID, responseMessage.ID, response); err != nil {
+			slog.Error("failed to send response", "error", err)
+		}
+		return
+	}
+
+	messages, err := h.messagesService.GetMessages(ctx, update.Message.From.ID)
+	if err != nil {
+		slog.Error("failed to get messages history", "error", err)
 	}
 
 	llmResponse, err := h.llmService.SendMessage(ctx, &llm.SendMessageInput{
-		Text:   msg.Text,
-		UserID: user.ID.String(),
+		Text:     msg.Text,
+		UserID:   user.ID.String(),
+		Messages: messages,
 	})
 
+	response = "Не удалось получить ответ. Перед повтором проверьте список трат."
 	if err != nil {
 		slog.Error("failed to process message", "error", err)
-		response = "Не удалось обработать сообщение"
-	}
-	if err == nil && llmResponse != "" {
+	} else if strings.TrimSpace(llmResponse) != "" {
 		response = llmResponse
 	}
 
-	_, err = client.EditMessageText(ctx, &telegram.EditMessageTextParams{
-		ChatID:    msg.Chat.ID,
-		MessageID: responseMessage.ID,
-		Text:      response,
-		ParseMode: models.ParseModeHTML,
-	})
-
+	response, err = sendResponse(ctx, client, msg.Chat.ID, responseMessage.ID, response)
 	if err != nil {
-		slog.Error("failed to send message", "error", err)
+		slog.Error("failed to send response", "error", err)
+		return
+	}
+
+	err = h.messagesService.AddMessage(ctx, &domain.Message{
+		TelegramID: update.Message.From.ID,
+		Message:    msg.Text,
+		Role:       domain.MessageUser,
+	})
+	if err != nil {
+		slog.Error("failed to save user message", "error", err)
+	}
+	err = h.messagesService.AddMessage(ctx, &domain.Message{
+		TelegramID: update.Message.From.ID,
+		Message:    response,
+		Role:       domain.MessageApp,
+	})
+	if err != nil {
+		slog.Error("failed to save app message", "error", err)
 	}
 }

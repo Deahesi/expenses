@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -37,9 +38,13 @@ func mapExpenses(expenses []domain.Expense) []LLMExpense {
 	return llmExpenses
 }
 
+var (
+	ErrEmptyDate = errors.New("empty date")
+)
+
 func parseDate(value string, loc *time.Location) (time.Time, error) {
 	if value == "" {
-		return time.Time{}, fmt.Errorf("empty date")
+		return time.Time{}, ErrEmptyDate
 	}
 
 	parsed, err := time.ParseInLocation("2006-01-02", value, loc)

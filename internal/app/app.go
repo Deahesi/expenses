@@ -10,9 +10,10 @@ import (
 )
 
 type Application struct {
-	pool     *pgxpool.Pool
-	server   *Server
-	services *Services
+	pool         *pgxpool.Pool
+	server       *Server
+	services     *Services
+	repositories *Repositories
 }
 
 func NewApplication(ctx context.Context, cfg *config.Config) (*Application, error) {
@@ -27,21 +28,23 @@ func NewApplication(ctx context.Context, cfg *config.Config) (*Application, erro
 
 	queries := db.New(pool)
 
-	repositories := NewRepositories(queries)
+	repositories, err := NewRepositories(ctx, cfg, queries)
+	if err != nil {
+		return nil, fmt.Errorf("repositories initialization: %w", err)
+	}
 
 	services, err := NewServices(ctx, repositories, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("services initialization: %w", err)
 	}
 
-	handlers := NewHandlers(services)
-
-	server := NewServer(handlers, cfg)
+	server := NewServer(services, cfg)
 
 	return &Application{
-		pool:     pool,
-		server:   server,
-		services: services,
+		pool:         pool,
+		server:       server,
+		services:     services,
+		repositories: repositories,
 	}, nil
 }
 
@@ -50,6 +53,7 @@ func (a *Application) Run(ctx context.Context, cfg *config.Config) error {
 	return a.server.Serve(ctx, cfg)
 }
 
-func (a *Application) Close() {
+func (a *Application) Close() error {
 	a.pool.Close()
+	return a.repositories.Close()
 }

@@ -3,9 +3,9 @@
 CREATE TABLE expenses (
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    amount NUMERIC(12, 2) NOT NULL,
+    amount BIGINT NOT NULL CHECK (amount > 0),
     category TEXT NOT NULL,
-    spent_at DATE NOT NULL,
+    spent_at TIMESTAMPTZ NOT NULL,
     comment TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

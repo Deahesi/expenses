@@ -6,6 +6,7 @@ import (
 	"github.com/Deahesi/expenses-backend/internal/bot/handlers"
 	"github.com/Deahesi/expenses-backend/internal/expense"
 	"github.com/Deahesi/expenses-backend/internal/llm"
+	"github.com/Deahesi/expenses-backend/internal/messages"
 	"github.com/Deahesi/expenses-backend/internal/user"
 	telegram "github.com/go-telegram/bot"
 )
@@ -19,16 +20,19 @@ func NewBotService(
 	usersService *user.UserService,
 	expensesService *expense.ExpenseService,
 	llmService *llm.LLMService,
+	messagesService *messages.MessagesService,
 ) (*BotService, error) {
 	messageHandler := handlers.NewMessageHandler(
 		usersService,
 		expensesService,
 		llmService,
+		messagesService,
 	)
 
 	client, err := telegram.New(
 		token,
 		telegram.WithDefaultHandler(messageHandler.HandleMessage),
+		telegram.WithNotAsyncHandlers(),
 	)
 	if err != nil {
 		return nil, err

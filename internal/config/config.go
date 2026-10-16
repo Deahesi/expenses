@@ -10,6 +10,11 @@ import (
 )
 
 func Load() (*Config, error) {
+	timezone, err := time.LoadLocation(getEnv("LLM_TIMEZONE", "UTC"))
+	if err != nil {
+		return nil, fmt.Errorf("LLM_TIMEZONE: %w", err)
+	}
+
 	cfg := &Config{
 		HTTP: HTTPConfig{
 			Addr:         getEnv("HTTP_ADDR", ":8080"),
@@ -26,11 +31,15 @@ func Load() (*Config, error) {
 
 		LLM: LLMConfig{
 			OpenRouterAPIKey: os.Getenv("OPENROUTER_API_KEY"),
-			Model:            getEnv("LLM_MODEL", "gpt-4o-mini"),
-			SystemPrompt:     buildSystemPrompt(time.Now()),
+			Model:            getEnv("LLM_MODEL", "openrouter/openai/gpt-4o-mini"),
+			SystemPrompt:     systemPrompt,
+			Timezone:         timezone,
 		},
 		Telegram: TelegramConfig{
 			TelegramBotApiKey: os.Getenv("TELEGRAM_BOT_API_KEY"),
+		},
+		Redis: RedisConfig{
+			RedisAddr: getEnv("REDIS_ADDR", "localhost:6379"),
 		},
 	}
 
@@ -40,6 +49,10 @@ func Load() (*Config, error) {
 
 	if cfg.Telegram.TelegramBotApiKey == "" {
 		return nil, fmt.Errorf("TELEGRAM_BOT_API_KEY is required")
+	}
+
+	if strings.TrimSpace(cfg.LLM.OpenRouterAPIKey) == "" {
+		return nil, fmt.Errorf("OPENROUTER_API_KEY is required")
 	}
 
 	return cfg, nil
@@ -94,10 +107,3 @@ func getEnvBool(key string, def bool) bool {
 
 //go:embed llm_prompt.md
 var systemPrompt string
-
-func buildSystemPrompt(now time.Time) string {
-	return strings.NewReplacer(
-		"{{CURRENT_DATE}}", now.Format("2006-01-02"),
-		"{{TIMEZONE}}", now.Location().String(),
-	).Replace(systemPrompt)
-}

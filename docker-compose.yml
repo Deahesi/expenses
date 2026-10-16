@@ -1,9 +1,6 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: expenses-db
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-expenses}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secret}
@@ -13,10 +10,63 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-controlplane}"]
-      interval: 10s
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command:
+      - redis-server
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      target: migrate
+    environment:
+      GOOSE_DRIVER: postgres
+      GOOSE_DBSTRING: ${DATABASE_URL}
+      GOOSE_MIGRATION_DIR: /app/internal/storage/postgres/migrations
+    command: ["up"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backend:
+    build:
+      context: .
+      target: runtime
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ../frontend
+    environment:
+      API_UPSTREAM: http://backend:8080
+    ports:
+      - "8081:80"
+    depends_on:
+      - backend
 
 volumes:
   postgres_data:

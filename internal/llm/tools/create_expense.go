@@ -17,8 +17,9 @@ type CreateExpenseInput struct {
 }
 
 type CreateExpenseOutput struct {
-	Success bool   `json:"success"`
-	Message string `json:"message"`
+	Success bool       `json:"success"`
+	Message string     `json:"message"`
+	Expense LLMExpense `json:"expense"`
 }
 
 func NewCreateExpenseTool(
@@ -28,25 +29,19 @@ func NewCreateExpenseTool(
 
 	return ai.NewTool(
 		"create_expense",
-		`Create a new expense for the current user.
+		`Create one expense explicitly reported by the current user.
+		Call when its amount is known; ask if it is missing or ambiguous.
+		Do not use for editing, budgets, or hypothetical spending.
 
-		Use this tool when the user explicitly wants to record a purchase, payment, or expense.
+		Required input:
+		- amount: Positive integer in whole RUB; 350 means 350 rubles, not kopecks.
+		- category: Exactly one of еда, транспорт, жильё, развлечения, здоровье, покупки, другое.
+		- spent_at: YYYY-MM-DD in the user's timezone. Use the current local date if omitted by the user.
+		- comment: Short Russian description based on the message; use "Расход" if no purpose is known.
 
-		Required information:
-		- amount: Positive expense amount in RUB.
-		- category: Expense category inferred from the description.
-		- spent_at: Expense date in RFC3339 format.
-		- comment: Short description of the expense.
-
-		Rules:
-		- Use today's date if the user does not specify one.
-		- Infer the most appropriate category automatically.
-		- Ask for clarification if the amount is missing or ambiguous.
-		- Do not create expenses when the user only asks a question.
-		- Never claim success unless the tool confirms it.
-
-		Example: "кофе 350 вчера" means creating an expense of 350 RUB
-		for coffee, dated yesterday.`,
+		Output: success, message, expense. On success=true, expense contains
+		the actual saved values. Confirm creation using only those values.
+		On success=false, explain the failure without claiming the expense was saved.`,
 
 		func(
 			ctx *ai.ToolContext,
@@ -62,7 +57,7 @@ func NewCreateExpenseTool(
 				}, nil
 			}
 
-			_, err = service.Create(ctx, expense.CreateExpenseInput{
+			created, err := service.Create(ctx, expense.CreateExpenseInput{
 				UserID:   userID,
 				Category: input.Category,
 				Amount:   input.Amount,
@@ -79,6 +74,7 @@ func NewCreateExpenseTool(
 
 			return CreateExpenseOutput{
 				Success: true,
+				Expense: domainExpenseToLLMType(created),
 			}, nil
 		},
 	)

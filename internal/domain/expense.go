@@ -22,6 +22,12 @@ type Expense struct {
 	UpdatedAt time.Time       `json:"updated_at"`
 }
 
+// ExpenseWithUser includes the owner of an expense.
+type ExpenseWithUser struct {
+	Expense
+	User User `json:"user"`
+}
+
 var ErrExpenseNotFound = errors.New("expense not found")
 
 // ExpenseCategory is one of the categories an expense can belong to.

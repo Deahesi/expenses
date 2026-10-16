@@ -15,10 +15,10 @@ type Server struct {
 }
 
 func NewServer(
-	handlers *Handlers,
+	services *Services,
 	cfg *config.Config,
 ) *Server {
-	api := httpapi.NewServer(handlers.Users, handlers.Expenses)
+	api := httpapi.NewServer(services.Expenses, services.Users)
 
 	server := &http.Server{
 		Addr:    cfg.HTTP.Addr,

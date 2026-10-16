@@ -25,8 +25,8 @@ type UpdateExpenseInput struct {
 	Comment  string
 }
 
-// ListFilter selects expenses for the web panel;
-// zero values mean the filter is not applied.
+// ListFilter selects expenses by owner, category and inclusive date range.
+// UserID is required for List and optional for GetAll; other zero values skip a filter.
 type ListFilter struct {
 	UserID   uuid.UUID
 	Category string

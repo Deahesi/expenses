@@ -24,25 +24,16 @@ func NewDeleteExpenseTool(
 
 	return ai.NewTool(
 		"delete_expense",
-		`Permanently delete an existing expense belonging to the current user.
+		`Delete one existing expense belonging to the current user.
+		First retrieve the target with list_expenses and match the user's criteria.
+		If no record matches, report that; if several match, ask which one.
 
-		Use this tool only when the user explicitly requests
-		to delete or remove a recorded expense.
+		Input: expense_id, the exact UUID returned by list_expenses for the
+		identified record. Never guess, generate, or copy an ID from user text.
+		Call only when the user explicitly requests deletion.
 
-		Required information:
-		- expense_id: Exact UUID of the expense to delete.
-
-		Rules:
-		- Always use list_expenses to identify the target expense first.
-		- Use only an expense_id returned by list_expenses.
-		- Never guess or generate expense IDs.
-		- Ensure the expense matches the user's request.
-		- If multiple expenses match, ask for clarification.
-		- Do not delete expenses without a clear user request.
-		- Never claim success unless the tool confirms it.
-
-		Example: "удали такси" means finding the matching taxi expense
-		and deleting it only if the target is unambiguous.`,
+		Output: success and message. Confirm deletion only if success=true.
+		On success=false, explain the failure without claiming the expense was deleted.`,
 
 		func(
 			ctx *ai.ToolContext,
@@ -58,7 +49,7 @@ func NewDeleteExpenseTool(
 				}, nil
 			}
 
-			err = service.Delete(ctx, id)
+			err = service.Delete(ctx, id, userID)
 			if err != nil {
 				return DeleteExpenseOutput{
 					Success: false,

@@ -3,8 +3,6 @@ package postgres
 import (
 	"context"
 	"errors"
-	"fmt"
-	"math/big"
 	"time"
 
 	"github.com/Deahesi/expenses-backend/internal/domain"
@@ -32,31 +30,34 @@ func (r *ExpensesRepository) Create(ctx context.Context, record domain.Expense) 
 	created, err := r.queries.CreateExpense(ctx, gen.CreateExpenseParams{
 		ID:       record.ID,
 		UserID:   record.UserID,
-		Amount:   numericFromKopecks(record.Amount),
+		Amount:   record.Amount,
 		Category: string(record.Category),
-		SpentAt:  nullableDate(record.SpentAt),
+		SpentAt:  record.SpentAt,
 		Comment:  nullableText(record.Comment),
 	})
 	if err != nil {
 		return domain.Expense{}, mapExpenseError(err)
 	}
 
-	return toDomainExpense(created)
+	return toDomainExpense(created), nil
 }
 
-func (r *ExpensesRepository) Get(ctx context.Context, id uuid.UUID) (domain.Expense, error) {
-	row, err := r.queries.GetExpense(ctx, id)
+func (r *ExpensesRepository) Get(ctx context.Context, id uuid.UUID, userID uuid.UUID) (domain.Expense, error) {
+	row, err := r.queries.GetExpense(ctx, gen.GetExpenseParams{
+		ID:     id,
+		UserID: userID,
+	})
 	if err != nil {
 		return domain.Expense{}, mapExpenseError(err)
 	}
 
-	return toDomainExpense(row)
+	return toDomainExpense(row), nil
 }
 
-func (r *ExpensesRepository) List(ctx context.Context, filter expense.ListFilter) ([]domain.Expense, error) {
-	rows, err := r.queries.ListExpenses(ctx, gen.ListExpensesParams{
+func (r *ExpensesRepository) GetAll(ctx context.Context, filter expense.ListFilter) ([]domain.Expense, error) {
+	rows, err := r.queries.GetAllExpenses(ctx, gen.GetAllExpensesParams{
 		UserID:   nullableUUID(filter.UserID),
-		Category: nullableText(string(filter.Category)),
+		Category: nullableText(filter.Category),
 		DateFrom: nullableDate(filter.DateFrom),
 		DateTo:   nullableDate(filter.DateTo),
 	})
@@ -64,14 +65,78 @@ func (r *ExpensesRepository) List(ctx context.Context, filter expense.ListFilter
 		return nil, mapExpenseError(err)
 	}
 
-	expenses := make([]domain.Expense, 0, len(rows))
-	for _, row := range rows {
-		record, err := toDomainExpense(row)
-		if err != nil {
-			return nil, err
-		}
+	return toDomainExpenses(rows), nil
+}
 
-		expenses = append(expenses, record)
+func (r *ExpensesRepository) List(ctx context.Context, filter expense.ListFilter) ([]domain.Expense, error) {
+	rows, err := r.queries.ListExpenses(ctx, gen.ListExpensesParams{
+		UserID:   filter.UserID,
+		Category: nullableText(filter.Category),
+		DateFrom: nullableDate(filter.DateFrom),
+		DateTo:   nullableDate(filter.DateTo),
+	})
+	if err != nil {
+		return nil, mapExpenseError(err)
+	}
+
+	return toDomainExpenses(rows), nil
+}
+
+func (r *ExpensesRepository) GetWithUser(
+	ctx context.Context,
+	id uuid.UUID,
+	userID uuid.UUID,
+) (domain.ExpenseWithUser, error) {
+	row, err := r.queries.GetExpenseWithUser(ctx, gen.GetExpenseWithUserParams{
+		ID:     id,
+		UserID: userID,
+	})
+	if err != nil {
+		return domain.ExpenseWithUser{}, mapExpenseError(err)
+	}
+
+	return toDomainExpenseWithUser(row.Expense, row.User), nil
+}
+
+func (r *ExpensesRepository) GetAllWithUser(
+	ctx context.Context,
+	filter expense.ListFilter,
+) ([]domain.ExpenseWithUser, error) {
+	rows, err := r.queries.GetAllExpensesWithUser(ctx, gen.GetAllExpensesWithUserParams{
+		UserID:   nullableUUID(filter.UserID),
+		Category: nullableText(filter.Category),
+		DateFrom: nullableDate(filter.DateFrom),
+		DateTo:   nullableDate(filter.DateTo),
+	})
+	if err != nil {
+		return nil, mapExpenseError(err)
+	}
+
+	expenses := make([]domain.ExpenseWithUser, 0, len(rows))
+	for _, row := range rows {
+		expenses = append(expenses, toDomainExpenseWithUser(row.Expense, row.User))
+	}
+
+	return expenses, nil
+}
+
+func (r *ExpensesRepository) ListWithUser(
+	ctx context.Context,
+	filter expense.ListFilter,
+) ([]domain.ExpenseWithUser, error) {
+	rows, err := r.queries.ListExpensesWithUser(ctx, gen.ListExpensesWithUserParams{
+		UserID:   filter.UserID,
+		Category: nullableText(filter.Category),
+		DateFrom: nullableDate(filter.DateFrom),
+		DateTo:   nullableDate(filter.DateTo),
+	})
+	if err != nil {
+		return nil, mapExpenseError(err)
+	}
+
+	expenses := make([]domain.ExpenseWithUser, 0, len(rows))
+	for _, row := range rows {
+		expenses = append(expenses, toDomainExpenseWithUser(row.Expense, row.User))
 	}
 
 	return expenses, nil
@@ -80,20 +145,24 @@ func (r *ExpensesRepository) List(ctx context.Context, filter expense.ListFilter
 func (r *ExpensesRepository) Update(ctx context.Context, record domain.Expense) (domain.Expense, error) {
 	updated, err := r.queries.UpdateExpense(ctx, gen.UpdateExpenseParams{
 		ID:       record.ID,
-		Amount:   numericFromKopecks(record.Amount),
+		UserID:   record.UserID,
+		Amount:   record.Amount,
 		Category: string(record.Category),
-		SpentAt:  nullableDate(record.SpentAt),
+		SpentAt:  record.SpentAt,
 		Comment:  nullableText(record.Comment),
 	})
 	if err != nil {
 		return domain.Expense{}, mapExpenseError(err)
 	}
 
-	return toDomainExpense(updated)
+	return toDomainExpense(updated), nil
 }
 
-func (r *ExpensesRepository) Delete(ctx context.Context, id uuid.UUID) error {
-	rowsAffected, err := r.queries.DeleteExpense(ctx, id)
+func (r *ExpensesRepository) Delete(ctx context.Context, id uuid.UUID, userID uuid.UUID) error {
+	rowsAffected, err := r.queries.DeleteExpense(ctx, gen.DeleteExpenseParams{
+		ID:     id,
+		UserID: userID,
+	})
 	if err != nil {
 		return mapExpenseError(err)
 	}
@@ -120,65 +189,33 @@ func nullableDate(value time.Time) pgtype.Date {
 	return pgtype.Date{Time: value, Valid: !value.IsZero()}
 }
 
-// numericFromKopecks builds a NUMERIC value from minor units (kopecks).
-func numericFromKopecks(kopecks int64) pgtype.Numeric {
-	return pgtype.Numeric{Int: big.NewInt(kopecks), Exp: -2, Valid: true}
+func toDomainExpenses(rows []gen.Expense) []domain.Expense {
+	expenses := make([]domain.Expense, 0, len(rows))
+	for _, row := range rows {
+		expenses = append(expenses, toDomainExpense(row))
+	}
+
+	return expenses
 }
 
-// kopecksFromNumeric converts a NUMERIC value into minor units (kopecks);
-// it fails if the value has more than two decimal places.
-func kopecksFromNumeric(value pgtype.Numeric) (int64, error) {
-	if !value.Valid {
-		return 0, errors.New("amount is null")
-	}
-
-	if value.NaN {
-		return 0, errors.New("amount is NaN")
-	}
-
-	unscaled := new(big.Int)
-	if value.Int != nil {
-		unscaled.Set(value.Int)
-	}
-
-	// value = unscaled * 10^Exp, so kopecks = unscaled * 10^(Exp+2).
-	exp := int64(value.Exp) + 2
-	if exp >= 0 {
-		factor := new(big.Int).Exp(big.NewInt(10), big.NewInt(exp), nil)
-		unscaled.Mul(unscaled, factor)
-	} else {
-		divisor := new(big.Int).Exp(big.NewInt(10), big.NewInt(-exp), nil)
-		quotient, remainder := new(big.Int).QuoRem(unscaled, divisor, new(big.Int))
-		if remainder.Sign() != 0 {
-			return 0, fmt.Errorf("amount has more than two decimal places")
-		}
-
-		unscaled = quotient
-	}
-
-	if !unscaled.IsInt64() {
-		return 0, errors.New("amount is out of range")
-	}
-
-	return unscaled.Int64(), nil
-}
-
-func toDomainExpense(row gen.Expense) (domain.Expense, error) {
-	kopecks, err := kopecksFromNumeric(row.Amount)
-	if err != nil {
-		return domain.Expense{}, fmt.Errorf("scan expense amount: %w", err)
-	}
-
+func toDomainExpense(row gen.Expense) domain.Expense {
 	return domain.Expense{
 		ID:        row.ID,
 		UserID:    row.UserID,
-		Amount:    kopecks,
+		Amount:    row.Amount,
 		Category:  domain.ExpenseCategory(row.Category),
-		SpentAt:   row.SpentAt.Time,
+		SpentAt:   row.SpentAt,
 		Comment:   row.Comment.String,
-		CreatedAt: row.CreatedAt.Time,
-		UpdatedAt: row.UpdatedAt.Time,
-	}, nil
+		CreatedAt: row.CreatedAt,
+		UpdatedAt: row.UpdatedAt,
+	}
+}
+
+func toDomainExpenseWithUser(record gen.Expense, owner gen.User) domain.ExpenseWithUser {
+	return domain.ExpenseWithUser{
+		Expense: toDomainExpense(record),
+		User:    toDomainUser(&owner),
+	}
 }
 
 func mapExpenseError(err error) error {
@@ -188,7 +225,6 @@ func mapExpenseError(err error) error {
 	case errors.Is(err, pgx.ErrNoRows):
 		return domain.ErrExpenseNotFound
 	case errors.As(err, &pgErr) && pgErr.Code == foreignKeyViolation:
-		// The only foreign key on expenses is user_id.
 		return domain.ErrUserNotFound
 	default:
 		return err

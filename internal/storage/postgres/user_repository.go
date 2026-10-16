@@ -9,7 +9,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // uniqueViolation is the PostgreSQL error code for unique constraint violations.
@@ -35,7 +34,7 @@ func (r *UserRepository) Create(ctx context.Context, user domain.User) (domain.U
 		return domain.User{}, mapUserError(err)
 	}
 
-	return toDomainUser(row.ID, row.TelegramID, row.FirstName, row.LastName, row.CreatedAt, row.UpdatedAt), nil
+	return toDomainUser(&row), nil
 }
 
 func (r *UserRepository) Upsert(
@@ -55,10 +54,7 @@ func (r *UserRepository) Upsert(
 		return domain.User{}, mapUserError(err)
 	}
 
-	return toDomainUser(
-		row.ID, row.TelegramID, row.FirstName,
-		row.LastName, row.CreatedAt, row.UpdatedAt,
-	), nil
+	return toDomainUser(&row), nil
 }
 
 func (r *UserRepository) Get(ctx context.Context, id uuid.UUID) (domain.User, error) {
@@ -67,7 +63,7 @@ func (r *UserRepository) Get(ctx context.Context, id uuid.UUID) (domain.User, er
 		return domain.User{}, mapUserError(err)
 	}
 
-	return toDomainUser(row.ID, row.TelegramID, row.FirstName, row.LastName, row.CreatedAt, row.UpdatedAt), nil
+	return toDomainUser(&row), nil
 }
 
 func (r *UserRepository) GetByTelegramID(ctx context.Context, telegramID int64) (domain.User, error) {
@@ -76,7 +72,7 @@ func (r *UserRepository) GetByTelegramID(ctx context.Context, telegramID int64) 
 		return domain.User{}, mapUserError(err)
 	}
 
-	return toDomainUser(row.ID, row.TelegramID, row.FirstName, row.LastName, row.CreatedAt, row.UpdatedAt), nil
+	return toDomainUser(&row), nil
 }
 
 func (r *UserRepository) List(ctx context.Context) ([]domain.User, error) {
@@ -87,7 +83,7 @@ func (r *UserRepository) List(ctx context.Context) ([]domain.User, error) {
 
 	users := make([]domain.User, 0, len(rows))
 	for _, row := range rows {
-		users = append(users, toDomainUser(row.ID, row.TelegramID, row.FirstName, row.LastName, row.CreatedAt, row.UpdatedAt))
+		users = append(users, toDomainUser(&row))
 	}
 
 	return users, nil
@@ -103,7 +99,7 @@ func (r *UserRepository) Update(ctx context.Context, user domain.User) (domain.U
 		return domain.User{}, mapUserError(err)
 	}
 
-	return toDomainUser(row.ID, row.TelegramID, row.FirstName, row.LastName, row.CreatedAt, row.UpdatedAt), nil
+	return toDomainUser(&row), nil
 }
 
 func (r *UserRepository) Delete(ctx context.Context, id uuid.UUID) error {
@@ -120,18 +116,15 @@ func (r *UserRepository) Delete(ctx context.Context, id uuid.UUID) error {
 }
 
 func toDomainUser(
-	id uuid.UUID,
-	telegramID int64,
-	firstName, lastName string,
-	createdAt, updatedAt pgtype.Timestamptz,
+	user *gen.User,
 ) domain.User {
 	return domain.User{
-		ID:         id,
-		TelegramID: telegramID,
-		FirstName:  firstName,
-		LastName:   lastName,
-		CreatedAt:  createdAt.Time,
-		UpdatedAt:  updatedAt.Time,
+		ID:         user.ID,
+		TelegramID: user.TelegramID,
+		FirstName:  user.FirstName,
+		LastName:   user.LastName,
+		CreatedAt:  user.CreatedAt,
+		UpdatedAt:  user.UpdatedAt,
 	}
 }
 

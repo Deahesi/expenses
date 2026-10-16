@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"errors"
 	"log/slog"
 	"time"
 
@@ -28,29 +29,20 @@ func NewListExpensesTool(
 
 	return ai.NewTool(
 		"list_expenses",
-		`Retrieve expenses belonging to the current user.
+		`Read expenses belonging to the current user. Use for viewing records
+		and for identifying a record before edit_expense or delete_expense.
 
-		Use this tool to:
-		- Display expenses for a specific period or category.
-		- Find expenses before editing or deleting them.
-		- Identify the most recent expense.
-		- Retrieve expense details for answering user questions.
+		Input: category, date_from, date_to. Send an empty string for each
+		unspecified filter. Nonempty dates use YYYY-MM-DD; both bounds are
+		inclusive calendar dates in the user's timezone. Filters combine with AND.
+		category is empty or one of еда, транспорт, жильё, развлечения, здоровье, покупки, другое.
+		There are no amount, text-search, sorting, or limit input parameters.
 
-		Available filters:
-		- category: Filter expenses by category.
-		- date_from: Start of the date range.
-		- date_to: End of the date range.
-
-		Rules:
-		- Apply relevant filters based on the user's request.
-		- Leave filters unspecified when they are not needed.
-		- Use returned expense IDs for edit_expense and delete_expense.
-		- Never invent expense IDs or transaction details.
-		- If multiple expenses match an ambiguous request, ask for clarification.
-		- Do not assume an incomplete list contains all matching expenses.
-
-		Example: "покажи траты на еду за неделю" means retrieving
-		expenses in the food category for the requested week.`,
+		Output: success, message, expenses. Each expense includes its existing
+		ID, amount, category, spent_at, and comment. On success=true with an empty
+		array, no records matched. On success=false, retrieval failed: do not
+		interpret it as an empty result. Array order is not guaranteed.
+		Use returned IDs for mutations. Do not calculate spending totals here.`,
 
 		func(
 			ctx *ai.ToolContext,
@@ -58,14 +50,7 @@ func NewListExpensesTool(
 		) (ListExpensesOutput, error) {
 			slog.Log(ctx, slog.LevelInfo, "Tool list\n")
 
-			dateFrom, err := parseDate(input.DateFrom, time.Now().Location())
-			if err != nil {
-				return ListExpensesOutput{
-					Success: false,
-					Message: err.Error(),
-				}, nil
-			}
-			dateTo, err := parseDate(input.DateTo, time.Now().Location())
+			filter, err := parseExpenseFilter(input, userID)
 			if err != nil {
 				return ListExpensesOutput{
 					Success: false,
@@ -73,12 +58,7 @@ func NewListExpensesTool(
 				}, nil
 			}
 
-			expenses, err := service.List(ctx, expense.ListFilter{
-				UserID:   userID,
-				Category: input.Category,
-				DateFrom: dateFrom,
-				DateTo:   dateTo,
-			})
+			expenses, err := service.List(ctx, filter)
 			if err != nil {
 				return ListExpensesOutput{
 					Success: false,
@@ -92,4 +72,22 @@ func NewListExpensesTool(
 			}, nil
 		},
 	)
+}
+
+func parseExpenseFilter(input ListExpensesInput, userID uuid.UUID) (expense.ListFilter, error) {
+	dateFrom, err := parseDate(input.DateFrom, time.UTC)
+	if err != nil && !errors.Is(err, ErrEmptyDate) {
+		return expense.ListFilter{}, err
+	}
+	dateTo, err := parseDate(input.DateTo, time.UTC)
+	if err != nil && !errors.Is(err, ErrEmptyDate) {
+		return expense.ListFilter{}, err
+	}
+
+	return expense.ListFilter{
+		UserID:   userID,
+		Category: input.Category,
+		DateFrom: dateFrom,
+		DateTo:   dateTo,
+	}, nil
 }

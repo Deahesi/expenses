@@ -2,7 +2,6 @@ package expenseHandlers
 
 import (
 	"errors"
-	"fmt"
 	"log"
 	"net/http"
 
@@ -29,7 +28,8 @@ func (h *ExpenseHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input, err := req.toInput()
+	req.UserID = chi.URLParam(r, "user_id")
+	input, err := newCreateExpenseInput(req)
 	if err != nil {
 		responses.Error(w, http.StatusBadRequest, err.Error())
 		return
@@ -51,35 +51,51 @@ func (h *ExpenseHandler) GetAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	expenses, err := h.service.List(r.Context(), filter)
+	expenses, err := h.service.GetAllWithUser(r.Context(), filter)
 	if err != nil {
 		respondError(w, err)
 		return
 	}
 
-	responses.JSON(w, http.StatusOK, newExpenseListResponse(expenses))
+	responses.JSON(w, http.StatusOK, newExpenseWithUserListResponse(expenses))
+}
+
+func (h *ExpenseHandler) GetUserAll(w http.ResponseWriter, r *http.Request) {
+	filter, err := parseListFilter(r)
+	if err != nil {
+		responses.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	expenses, err := h.service.ListWithUser(r.Context(), filter)
+	if err != nil {
+		respondError(w, err)
+		return
+	}
+
+	responses.JSON(w, http.StatusOK, newExpenseWithUserListResponse(expenses))
 }
 
 func (h *ExpenseHandler) GetOne(w http.ResponseWriter, r *http.Request) {
-	id, ok := parseID(r)
-	if !ok {
-		responses.Error(w, http.StatusBadRequest, "invalid expense id")
+	id, userID, err := parseExpenseIDs(r)
+	if err != nil {
+		responses.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	expense, err := h.service.Get(r.Context(), id)
+	expense, err := h.service.GetWithUser(r.Context(), id, userID)
 	if err != nil {
 		respondError(w, err)
 		return
 	}
 
-	responses.JSON(w, http.StatusOK, newExpenseResponse(expense))
+	responses.JSON(w, http.StatusOK, newExpenseWithUserResponse(expense))
 }
 
 func (h *ExpenseHandler) Update(w http.ResponseWriter, r *http.Request) {
-	id, ok := parseID(r)
-	if !ok {
-		responses.Error(w, http.StatusBadRequest, "invalid expense id")
+	id, userID, err := parseExpenseIDs(r)
+	if err != nil {
+		responses.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -89,13 +105,13 @@ func (h *ExpenseHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input, err := req.toInput()
+	input, err := newUpdateExpenseInput(req)
 	if err != nil {
 		responses.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	updated, err := h.service.Update(r.Context(), id, input)
+	updated, err := h.service.Update(r.Context(), id, userID, input)
 	if err != nil {
 		respondError(w, err)
 		return
@@ -105,13 +121,13 @@ func (h *ExpenseHandler) Update(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ExpenseHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	id, ok := parseID(r)
-	if !ok {
-		responses.Error(w, http.StatusBadRequest, "invalid expense id")
+	id, userID, err := parseExpenseIDs(r)
+	if err != nil {
+		responses.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	if err := h.service.Delete(r.Context(), id); err != nil {
+	if err := h.service.Delete(r.Context(), id, userID); err != nil {
 		respondError(w, err)
 		return
 	}
@@ -119,52 +135,18 @@ func (h *ExpenseHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// parseListFilter reads the web panel filters: family member, category
-// and period (both bounds inclusive).
-func parseListFilter(r *http.Request) (expense.ListFilter, error) {
-	query := r.URL.Query()
-
-	filter := expense.ListFilter{
-		Category: query.Get("category"),
-	}
-
-	if raw := query.Get("user_id"); raw != "" {
-		userID, err := parseUUID(raw)
-		if err != nil {
-			return expense.ListFilter{}, fmt.Errorf("user_id: %w", err)
-		}
-
-		filter.UserID = userID
-	}
-
-	if raw := query.Get("date_from"); raw != "" {
-		dateFrom, err := parseDate(raw)
-		if err != nil {
-			return expense.ListFilter{}, fmt.Errorf("date_from: %w", err)
-		}
-
-		filter.DateFrom = dateFrom
-	}
-
-	if raw := query.Get("date_to"); raw != "" {
-		dateTo, err := parseDate(raw)
-		if err != nil {
-			return expense.ListFilter{}, fmt.Errorf("date_to: %w", err)
-		}
-
-		filter.DateTo = dateTo
-	}
-
-	return filter, nil
-}
-
-func parseID(r *http.Request) (uuid.UUID, bool) {
+func parseExpenseIDs(r *http.Request) (uuid.UUID, uuid.UUID, error) {
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
-	if err != nil {
-		return uuid.Nil, false
+	if err != nil || id == uuid.Nil {
+		return uuid.Nil, uuid.Nil, errors.New("invalid expense id")
 	}
 
-	return id, true
+	userID, err := uuid.Parse(chi.URLParam(r, "user_id"))
+	if err != nil || userID == uuid.Nil {
+		return uuid.Nil, uuid.Nil, errors.New("invalid user id")
+	}
+
+	return id, userID, nil
 }
 
 func respondError(w http.ResponseWriter, err error) {

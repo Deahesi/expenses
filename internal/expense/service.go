@@ -13,11 +13,7 @@ import (
 
 const (
 	maxCommentLength = 500
-
-	// maxAmountKopecks is the upper bound of the NUMERIC(12,2) amount column.
-	maxAmountKopecks int64 = 999_999_999_999
-	// maxAmountRubles guards the float-to-int conversion before rounding.
-	maxAmountRubles = 1e10
+	maxAmountRubles  = 1e10
 )
 
 // Service implements expense management use cases.
@@ -68,8 +64,8 @@ func (s *ExpenseService) Create(ctx context.Context, input CreateExpenseInput) (
 	return created, nil
 }
 
-func (s *ExpenseService) Get(ctx context.Context, id uuid.UUID) (domain.Expense, error) {
-	expense, err := s.repo.Get(ctx, id)
+func (s *ExpenseService) Get(ctx context.Context, id uuid.UUID, userID uuid.UUID) (domain.Expense, error) {
+	expense, err := s.repo.Get(ctx, id, userID)
 	if err != nil {
 		return domain.Expense{}, fmt.Errorf("get expense: %w", err)
 	}
@@ -77,15 +73,28 @@ func (s *ExpenseService) Get(ctx context.Context, id uuid.UUID) (domain.Expense,
 	return expense, nil
 }
 
-func (s *ExpenseService) List(ctx context.Context, filter ListFilter) ([]domain.Expense, error) {
-	if filter.Category != "" {
-		if _, err := domain.ParseExpenseCategory(filter.Category); err != nil {
-			return nil, err
-		}
+func (s *ExpenseService) GetAll(ctx context.Context, filter ListFilter) ([]domain.Expense, error) {
+	filter, err := normalizeListFilter(filter)
+	if err != nil {
+		return nil, err
 	}
 
-	if !filter.DateFrom.IsZero() && !filter.DateTo.IsZero() && filter.DateFrom.After(filter.DateTo) {
-		return nil, fmt.Errorf("%w: date_from must not be after date_to", domain.ErrInvalidInput)
+	expenses, err := s.repo.GetAll(ctx, filter)
+	if err != nil {
+		return nil, fmt.Errorf("get all expenses: %w", err)
+	}
+
+	return expenses, nil
+}
+
+func (s *ExpenseService) List(ctx context.Context, filter ListFilter) ([]domain.Expense, error) {
+	if filter.UserID == uuid.Nil {
+		return nil, fmt.Errorf("%w: user_id is required", domain.ErrInvalidInput)
+	}
+
+	filter, err := normalizeListFilter(filter)
+	if err != nil {
+		return nil, err
 	}
 
 	expenses, err := s.repo.List(ctx, filter)
@@ -96,7 +105,31 @@ func (s *ExpenseService) List(ctx context.Context, filter ListFilter) ([]domain.
 	return expenses, nil
 }
 
-func (s *ExpenseService) Update(ctx context.Context, id uuid.UUID, input UpdateExpenseInput) (domain.Expense, error) {
+// Total returns a user's spending in whole rubles for the selected filters.
+func (s *ExpenseService) Total(ctx context.Context, filter ListFilter) (int64, error) {
+	if filter.UserID == uuid.Nil {
+		return 0, fmt.Errorf("%w: user_id is required", domain.ErrInvalidInput)
+	}
+
+	expenses, err := s.List(ctx, filter)
+	if err != nil {
+		return 0, fmt.Errorf("total expenses: %w", err)
+	}
+
+	var total int64
+	for _, expense := range expenses {
+		total += expense.Amount
+	}
+
+	return total, nil
+}
+
+func (s *ExpenseService) Update(
+	ctx context.Context,
+	id uuid.UUID,
+	userID uuid.UUID,
+	input UpdateExpenseInput,
+) (domain.Expense, error) {
 	err := validateAmount(input.Amount)
 	if err != nil {
 		return domain.Expense{}, err
@@ -118,6 +151,7 @@ func (s *ExpenseService) Update(ctx context.Context, id uuid.UUID, input UpdateE
 
 	updated, err := s.repo.Update(ctx, domain.Expense{
 		ID:       id,
+		UserID:   userID,
 		Amount:   input.Amount,
 		Category: category,
 		SpentAt:  normalizeDate(input.SpentAt),
@@ -130,18 +164,32 @@ func (s *ExpenseService) Update(ctx context.Context, id uuid.UUID, input UpdateE
 	return updated, nil
 }
 
-func (s *ExpenseService) Delete(ctx context.Context, id uuid.UUID) error {
-	if err := s.repo.Delete(ctx, id); err != nil {
+func (s *ExpenseService) Delete(ctx context.Context, id uuid.UUID, userID uuid.UUID) error {
+	if err := s.repo.Delete(ctx, id, userID); err != nil {
 		return fmt.Errorf("delete expense: %w", err)
 	}
 
 	return nil
 }
 
-// normalizeAmount converts a ruble amount into minor units (kopecks),
-// rounding to two decimal places the same way the NUMERIC(12,2) column does.
+func normalizeListFilter(filter ListFilter) (ListFilter, error) {
+	if filter.Category != "" {
+		category, err := domain.ParseExpenseCategory(filter.Category)
+		if err != nil {
+			return ListFilter{}, err
+		}
+		filter.Category = string(category)
+	}
+
+	if !filter.DateFrom.IsZero() && !filter.DateTo.IsZero() && filter.DateFrom.After(filter.DateTo) {
+		return ListFilter{}, fmt.Errorf("%w: date_from must not be after date_to", domain.ErrInvalidInput)
+	}
+
+	return filter, nil
+}
+
 func validateAmount(value int64) error {
-	if value < 0 || value >= maxAmountRubles {
+	if value <= 0 || value >= maxAmountRubles {
 		return fmt.Errorf("%w: amount must be a positive number", domain.ErrInvalidInput)
 	}
 

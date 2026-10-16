@@ -5,6 +5,8 @@
 package gen
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -12,12 +14,12 @@ import (
 type Expense struct {
 	ID        uuid.UUID
 	UserID    uuid.UUID
-	Amount    pgtype.Numeric
+	Amount    int64
 	Category  string
-	SpentAt   pgtype.Date
+	SpentAt   time.Time
 	Comment   pgtype.Text
-	CreatedAt pgtype.Timestamptz
-	UpdatedAt pgtype.Timestamptz
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type User struct {
@@ -25,6 +27,6 @@ type User struct {
 	FirstName  string
 	LastName   string
 	TelegramID int64
-	CreatedAt  pgtype.Timestamptz
-	UpdatedAt  pgtype.Timestamptz
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }

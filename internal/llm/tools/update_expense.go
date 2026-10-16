@@ -18,9 +18,9 @@ type EditExpenseInput struct {
 }
 
 type EditExpenseOutput struct {
-	Success bool   `json:"success"`
-	Message string `json:"message"`
-	Expense LLMExpense
+	Success bool       `json:"success"`
+	Message string     `json:"message"`
+	Expense LLMExpense `json:"expense"`
 }
 
 func NewEditExpenseTool(
@@ -30,29 +30,24 @@ func NewEditExpenseTool(
 
 	return ai.NewTool(
 		"edit_expense",
-		`Edit an existing expense belonging to the current user.
+		`Replace the field values of one existing expense belonging to the current user.
+		First retrieve the target with list_expenses. Use only its returned ID.
+		If the user's criteria do not identify exactly one target, ask which record.
 
-		Use this tool when the user wants to change an existing expense.
-
-		Editable fields:
-		- amount: Expense amount in RUB.
-		- category: Expense category.
-		- spent_at: Expense date in RFC3339 format.
+		Required input:
+		- expense_id: Exact UUID returned by list_expenses for the identified record.
+		- amount: Positive integer in whole RUB.
+		- category: Exactly one of еда, транспорт, жильё, развлечения, здоровье, покупки, другое.
+		- spent_at: YYYY-MM-DD in the user's timezone.
 		- comment: Expense description.
 
-		Rules:
-		- Always use list_expenses to identify the target expense first.
-		- Use the exact expense_id returned by list_expenses.
-		- Retrieve the current expense values before editing.
-		- Preserve all fields that the user did not request to change.
-		- Provide complete updated expense data.
-		- Never guess an expense ID.
-		- If the target expense is ambiguous, ask for clarification.
-		- Never claim success unless the tool confirms it.
+		All fields are required: this is a full replacement, not a partial patch.
+		Change only the fields requested by the user. Copy every unchanged field
+		exactly from the retrieved record; do not use today's date for an unchanged date.
+		Never use this tool to create a new record.
 
-		Example: "последнее было не 350, а 450" means finding
-		the most recent expense, verifying its amount is 350,
-		and updating the amount to 450 while preserving other fields.`,
+		Output: success, message, expense. Confirm only if success=true;
+		then expense contains the updated values. On failure, do not claim an update.`,
 
 		func(
 			ctx *ai.ToolContext,
@@ -76,7 +71,7 @@ func NewEditExpenseTool(
 				}, nil
 			}
 
-			expense, err := service.Update(ctx, id, expense.UpdateExpenseInput{
+			expense, err := service.Update(ctx, id, userID, expense.UpdateExpenseInput{
 				Amount:   input.Amount,
 				Category: input.Category,
 				SpentAt:  spentAt,

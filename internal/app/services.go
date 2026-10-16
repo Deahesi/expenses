@@ -7,6 +7,7 @@ import (
 	"github.com/Deahesi/expenses-backend/internal/config"
 	"github.com/Deahesi/expenses-backend/internal/expense"
 	"github.com/Deahesi/expenses-backend/internal/llm"
+	"github.com/Deahesi/expenses-backend/internal/messages"
 	"github.com/Deahesi/expenses-backend/internal/user"
 )
 
@@ -23,6 +24,8 @@ func NewServices(
 ) (*Services, error) {
 	users := user.NewUserService(repositories.Users)
 	expenses := expense.NewExpenseService(repositories.Expenses)
+	messages := messages.NewMessagesService(repositories.RedisStorage.Repositories.Message)
+
 	llm, err := llm.NewLLMService(
 		ctx,
 		expenses,
@@ -38,6 +41,7 @@ func NewServices(
 		users,
 		expenses,
 		llm,
+		messages,
 	)
 
 	if err != nil {

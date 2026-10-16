@@ -7,7 +7,9 @@ type Config struct {
 	Postgres PostgresConfig
 	LLM      LLMConfig
 	Telegram TelegramConfig
+	Redis    RedisConfig
 }
+
 type HTTPConfig struct {
 	Addr         string
 	ReadTimeout  time.Duration
@@ -25,8 +27,13 @@ type LLMConfig struct {
 	OpenRouterAPIKey string
 	Model            string
 	SystemPrompt     string
+	Timezone         *time.Location
 }
 
 type TelegramConfig struct {
 	TelegramBotApiKey string
+}
+
+type RedisConfig struct {
+	RedisAddr string
 }
